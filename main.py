@@ -41,9 +41,14 @@ def verifyLockForTransaction(locks, operations, transactions):
 
     return None
 
-for command in scheduler:
-    if command.transaction not in transactions:
-        transactions.append(command.transaction)
+def scheduleCommit(locks, command):
+    print('Escalona ' + command)
+    for allLocks in locks.values():
+        for lock in allLocks:
+            if lock.transaction == command.transaction:
+                allLocks.remove(lock)
+
+def tryScheduleCommand(locks, waiting, transactions, command):
     if command.operation == Operation.WRITE:
         hasLock = verifyLock(locks, command, [Operation.WRITE, Operation.COMMIT])
         if hasLock:
@@ -72,4 +77,11 @@ for command in scheduler:
                 locks[command.object].append(Lock(command))
             currentObject = verifyLockForTransaction(locks, [Operation.WRITE], [command.transaction])
         if not hasLock:
-            print('Escalona ' + command)
+            scheduleCommit(locks, command)
+
+for command in scheduler:
+    if command.transaction not in transactions:
+        transactions.append(command.transaction)
+    while not waiting[command.transaction]:
+        
+    tryScheduleCommand(locks, waiting, transactions, command)
