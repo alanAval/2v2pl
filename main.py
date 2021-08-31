@@ -1,8 +1,11 @@
-from _typeshed import ReadableBuffer
 from operation import Command, Lock, Operation
 
 
-S = 'r1(x)r2(x)w1(x)w2(x)c1(x)c2(x)'
+S = 'r1(x)r2(x)w1(x)c1(x)w2(x)c2(x)'
+
+blk = 'rl1(x)rl2(x)wl1(x)'
+
+T1 -> <-  T2
 
 scheduler = [
     Command(Operation.READ, 'x', 1),
@@ -26,7 +29,7 @@ def verifyLock(locks, command, operations):
             hasLock = True
     return hasLock
 
-def verifyLockForTransaction(locks, object, operations, transactions):
+def verifyLockForTransactionWithObject(locks, object, operations, transactions):
     hasLock = False
     for lock in locks[object]:
         if lock.operation in operations and lock.transaction in transactions:
@@ -37,51 +40,57 @@ def verifyLockForTransaction(locks, operations, transactions):
     for allLocks in locks.values():
         for lock in allLocks:
             if lock.operation in operations and lock.transaction in transactions:
-                return lock.object
+                return lock
 
     return None
 
 def scheduleCommit(locks, command):
-    print('Escalona ' + command)
+    print('Escalona ' + repr(command))
     for allLocks in locks.values():
         for lock in allLocks:
             if lock.transaction == command.transaction:
                 allLocks.remove(lock)
 
-def tryScheduleCommand(locks, waiting, transactions, command):
+def tryScheduleCommand(locks, transactions, command):
     if command.operation == Operation.WRITE:
         hasLock = verifyLock(locks, command, [Operation.WRITE, Operation.COMMIT])
         if hasLock:
-            waiting.append(command)
+            return False
         else:
             locks[command.object].append(Lock(command))
-            print('Escalona em outra versão' + command)
-    elif command.Operation == Operation.READ:
+            print('Escalona em outra versão' + repr(command))
+    elif command.operation == Operation.READ:
         hasLock = verifyLock(locks, command, [Operation.COMMIT])
         if hasLock:
-            waiting.append(command)
+            return False
         else:
             locks[command.object].append(Lock(command))
-            if verifyLockForTransaction(locks, command.object, [Operation.WRITE], [command.transaction]):
-                print('Escalona em outra versão ' + command)
+            if verifyLockForTransactionWithObject(locks, command.object, [Operation.WRITE], [command.transaction]):
+                print('Escalona em outra versão ' + repr(command))
             else:
-                print('Escalona ' + command)
+                print('Escalona ' + repr(command))
     else:
-        hasLock = False
         currentObject = verifyLockForTransaction(locks, [Operation.WRITE], [command.transaction])
         while currentObject is not None:
-            if verifyLockForTransaction(locks, [Operation.READ], transactions):
-                waiting.append(command)
-                hasLock = True
+            if verifyLockForTransactionWithObject(locks, currentObject.object, [Operation.READ], transactions):
+                return False
             else:
-                locks[command.object].append(Lock(command))
+                currentObject.operation = Operation.COMMIT
             currentObject = verifyLockForTransaction(locks, [Operation.WRITE], [command.transaction])
-        if not hasLock:
-            scheduleCommit(locks, command)
+        scheduleCommit(locks, command)
+    return True
 
 for command in scheduler:
     if command.transaction not in transactions:
         transactions.append(command.transaction)
-    while not waiting[command.transaction]:
-        
-    tryScheduleCommand(locks, waiting, transactions, command)
+    shouldTrySchedule = True
+    while waiting[command.transaction]:
+        commandToExecute = waiting[command.transaction][0]
+        if tryScheduleCommand(locks, transactions, commandToExecute):
+            waiting[command.transaction].remove(commandToExecute)
+        else:
+            waiting[command.transaction].append(command)
+            shouldTrySchedule = False
+            break
+    if shouldTrySchedule and not tryScheduleCommand(locks, transactions, command):
+        waiting[command.transaction].append(command)
