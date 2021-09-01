@@ -1,11 +1,9 @@
 from operation import Command, Lock, Operation
+import numpy as np
 
 
-S = 'r1(x)r2(x)w1(x)c1(x)w2(x)c2(x)'
-
-blk = 'rl1(x)rl2(x)wl1(x)'
-
-T1 -> <-  T2
+S = 'r1(x)r2(x)w1(x)c1(x)c2(x)'
+S1 = 'r1xr2xw3xc3c2c1'
 
 scheduler = [
     Command(Operation.READ, 'x', 1),
@@ -15,19 +13,41 @@ scheduler = [
     Command(Operation.COMMIT, 'x', 1),
     Command(Operation.COMMIT, 'x', 2)
 ]
+# scheduler = [
+#     Command(Operation.READ, 'x', 1),
+#     Command(Operation.READ, 'x', 2),
+#     Command(Operation.WRITE, 'x', 1),
+#     Command(Operation.COMMIT, 'x', 1),
+#     Command(Operation.COMMIT, 'x', 2)
+# ]
+# scheduler = [
+#     Command(Operation.READ, 'x', 1),
+#     Command(Operation.READ, 'x', 2),
+#     Command(Operation.WRITE, 'x', 3),
+#     Command(Operation.COMMIT, '', 3),
+#     Command(Operation.COMMIT, '', 2),
+#     Command(Operation.COMMIT, '', 1)
+# ]
 
 locks = {'x' : []}
 
-waiting = {1 : [], 2 : []}
+waiting = []
 
 transactions = []
 
+deadLockGraph = {}
+
 def verifyLock(locks, command, operations):
-    hasLock = False
     for lock in locks[command.object]:
         if lock.operation in operations and lock.transaction != command.transaction:
-            hasLock = True
-    return hasLock
+            return lock
+    return None
+
+def verifyLockForObject(locks, object, operations, transaction):
+    for lock in locks[object]:
+        if lock.operation in operations and lock.transaction != transaction:
+            return lock
+    return None
 
 def verifyLockForTransactionWithObject(locks, object, operations, transactions):
     hasLock = False
@@ -50,18 +70,24 @@ def scheduleCommit(locks, command):
         for lock in allLocks:
             if lock.transaction == command.transaction:
                 allLocks.remove(lock)
+    del deadLockGraph[command.transaction]
+    for deadLockArray in deadLockGraph.values():
+        while command.transaction in deadLockArray:
+            deadLockArray.remove(command.transaction)
 
-def tryScheduleCommand(locks, transactions, command):
+def tryScheduleCommand(locks, command):
     if command.operation == Operation.WRITE:
         hasLock = verifyLock(locks, command, [Operation.WRITE, Operation.COMMIT])
         if hasLock:
+            deadLockGraph[command.transaction].append(hasLock.transaction)
             return False
         else:
             locks[command.object].append(Lock(command))
-            print('Escalona em outra versão' + repr(command))
+            print('Escalona em outra versão ' + repr(command))
     elif command.operation == Operation.READ:
         hasLock = verifyLock(locks, command, [Operation.COMMIT])
         if hasLock:
+            deadLockGraph[command.transaction].append(hasLock.transaction)
             return False
         else:
             locks[command.object].append(Lock(command))
@@ -72,7 +98,9 @@ def tryScheduleCommand(locks, transactions, command):
     else:
         currentObject = verifyLockForTransaction(locks, [Operation.WRITE], [command.transaction])
         while currentObject is not None:
-            if verifyLockForTransactionWithObject(locks, currentObject.object, [Operation.READ], transactions):
+            lock = verifyLockForObject(locks, currentObject.object, [Operation.READ, Operation.WRITE, Operation.COMMIT], command.transaction)
+            if lock:
+                deadLockGraph[command.transaction].append(lock.transaction)
                 return False
             else:
                 currentObject.operation = Operation.COMMIT
@@ -80,17 +108,50 @@ def tryScheduleCommand(locks, transactions, command):
         scheduleCommit(locks, command)
     return True
 
-for command in scheduler:
+def hasWaitingCommands(waiting, command):
+    if command.operation == Operation.COMMIT:
+        for c in waiting:
+            if c.transaction == command.transaction:
+                return True
+    return False
+
+def transferWaitingToScheduler():
+    global scheduler
+    global waiting
+    scheduler = waiting + scheduler
+    waiting = []
+
+def hasDeadLock(scheduler, locks, waiting, deadLockGraph, command):
+    hasDeadLock = False
+    for deadLock in deadLockGraph[command.transaction]:
+        if command.transaction in deadLockGraph[deadLock]:
+            hasDeadLock = True
+            print('Deadlock encontrado, matando transação %s' % command.transaction)
+            for com in waiting.copy():
+                if com.transaction == command.transaction:
+                    waiting.remove(com)
+            for com in scheduler.copy():
+                if com.transaction == command.transaction:
+                    scheduler.remove(com)
+            for allLock in locks.values():
+                for lock in allLock.copy():
+                    if lock.transaction == command.transaction:
+                        allLock.remove(lock)
+            transferWaitingToScheduler()
+    return hasDeadLock
+
+while scheduler:
+    command = scheduler[0]
+    scheduler.remove(command)
     if command.transaction not in transactions:
         transactions.append(command.transaction)
-    shouldTrySchedule = True
-    while waiting[command.transaction]:
-        commandToExecute = waiting[command.transaction][0]
-        if tryScheduleCommand(locks, transactions, commandToExecute):
-            waiting[command.transaction].remove(commandToExecute)
-        else:
-            waiting[command.transaction].append(command)
-            shouldTrySchedule = False
-            break
-    if shouldTrySchedule and not tryScheduleCommand(locks, transactions, command):
-        waiting[command.transaction].append(command)
+        deadLockGraph[command.transaction] = []
+    if hasWaitingCommands(waiting, command):
+        waiting.append(command)
+        continue
+    if not tryScheduleCommand(locks, command):
+        if not hasDeadLock(scheduler, locks, waiting, deadLockGraph, command):
+            waiting.append(command)
+    else:
+        transferWaitingToScheduler()
+    
