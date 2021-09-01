@@ -15,7 +15,12 @@ class Command:
 
 
 class Lock:
-    def __init__(self, command):
+    def __init__(self, command, intentional = False):
         self.operation = command.operation
         self.object = command.object
         self.transaction = command.transaction
+        self.intentional = intentional
+
+    def copyIntentional(self):
+        auxCommand = Command(self.operation, self.object, self.transaction)
+        return Lock(auxCommand, True)
