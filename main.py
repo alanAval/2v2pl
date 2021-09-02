@@ -1,27 +1,12 @@
+import transactionParser as tp
 from objects import Object, ObjectType
 from operation import Command, Lock, Operation
 
-
-S = 'r1(x)r2(x)w1(x)c1(x)c2(x)'
-S1 = 'r1xr2xw3xc3c2c1'
-
 db = Object(None, 'DB', ObjectType.DATABASE)
-area1 = Object(db, '1', ObjectType.TABLESPACE)
-x = Object(area1, 'x', ObjectType.TABLE)
-xp1 = Object(x, '1', ObjectType.PAGE)
-xp1r1 = Object(xp1, '1', ObjectType.ROW)
-xp1r2 = Object(xp1, '2', ObjectType.ROW)
-xp1r3 = Object(xp1, '3', ObjectType.ROW)
-xp2 = Object(x, '2', ObjectType.PAGE)
-xp2r1 = Object(xp2, '1', ObjectType.ROW)
 
-scheduler = [
-    Command(Operation.READ, xp2, 2),
-    Command(Operation.WRITE, x, 2),
-    Command(Operation.WRITE, xp1, 1),
-    Command(Operation.COMMIT, None, 2),
-    Command(Operation.COMMIT, None, 1)
-]
+schedulerString = input('Insira a string do schedule: \n')
+
+scheduler = tp.parseSchedule(db, schedulerString)
 
 waiting = []
 
@@ -95,10 +80,18 @@ def transferWaitingToScheduler():
     scheduler = waiting + scheduler
     waiting = []
 
+def findWayToDeadLock(deadLockGraph, fromTransaction, toTransaction):
+    if toTransaction in deadLockGraph[fromTransaction]:
+        return True
+    for transaction in deadLockGraph[fromTransaction]:
+        if findWayToDeadLock(deadLockGraph, transaction, toTransaction):
+            return True
+    return False
+
 def hasDeadLock(scheduler, waiting, deadLockGraph, command):
     hasDeadLock = False
     for deadLock in deadLockGraph[command.transaction]:
-        if command.transaction in deadLockGraph[deadLock]:
+        if findWayToDeadLock(deadLockGraph, deadLock, command.transaction):
             hasDeadLock = True
             print('Deadlock encontrado, abortando transação %s' % command.transaction)
             for com in waiting.copy():
@@ -117,7 +110,7 @@ def hasDeadLock(scheduler, waiting, deadLockGraph, command):
 
 def addCommandToWaitingList(command):
     global waiting
-    print('Command (' + repr(command) + ') added to waiting list')
+    print('Comando (' + repr(command) + ') adicionado a lista de espera')
     waiting.append(command)
 
 while scheduler:

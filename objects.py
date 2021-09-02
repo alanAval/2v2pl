@@ -2,11 +2,21 @@ from enum import Enum
 from operation import Lock
 
 class ObjectType(Enum):
-    DATABASE = 0,
-    TABLESPACE = 1,
-    TABLE = 2,
-    PAGE = 3,
+    DATABASE = 0
+    TABLESPACE = 1
+    TABLE = 2
+    PAGE = 3
     ROW = 4
+
+    def succ(self):
+        newValue = self.value + 1
+        newValue = 0 if newValue > 4 else newValue
+        return ObjectType(newValue)
+
+    def pred(self):
+        newValue = self.value - 1
+        newValue = 4 if newValue < 0 else newValue
+        return ObjectType(self.value - 1)
 
 class Object:
     def __init__(self, parent, name, type) -> None:
@@ -59,6 +69,22 @@ class Object:
         for lock in self.locks.copy():
             if lock.transaction == transaction:
                 self.locks.remove(lock)
+
+    def find(self, objectName):
+        for child in self.children:
+            if child.name == objectName:
+                return child
+        return None
+
+    def findRecursive(self, objectName):
+        rootObject = objectName.split('_')[0]
+        for child in self.children:
+            if child.name == rootObject:
+                if len(objectName.split('_')) > 1:
+                    return child.findRecursive('_'.join(objectName.split('_')[1:]))
+                else:
+                    return child
+        return None 
 
     def __repr__(self) -> str:
         return '%s %s' % (self.type, self.name)

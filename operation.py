@@ -4,6 +4,15 @@ class Operation(Enum):
     WRITE = 1
     COMMIT = 2
 
+    @staticmethod
+    def fromString(string):
+        if string == 'R':
+            return Operation.READ
+        elif string == 'W':
+            return Operation.WRITE
+        elif string == 'C':
+            return Operation.COMMIT
+
 class Command:
     def __init__(self, operation, object, transaction):
         self.operation = operation
@@ -11,6 +20,8 @@ class Command:
         self.transaction = transaction
 
     def __repr__(self) -> str:
+        if self.operation == Operation.COMMIT:
+            return 'Operation %s on transaction %s' % (self.operation, self.transaction)
         return 'Operation %s over object %s on transaction %s' % (self.operation, self.object, self.transaction)
 
 
